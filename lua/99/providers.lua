@@ -329,6 +329,16 @@ function GeminiCLIProvider._get_default_model()
   return "auto"
 end
 
+function GeminiCLIProvider.fetch_models(callback)
+  callback({
+    "auto",
+    "pro",
+    "flash",
+    "flash-lite",
+  }, nil)
+end
+
+
 return {
   BaseProvider = BaseProvider,
   OpenCodeProvider = OpenCodeProvider,

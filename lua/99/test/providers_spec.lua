@@ -85,6 +85,16 @@ describe("providers", function()
     it("has correct default model", function()
       eq("auto", Providers.GeminiCLIProvider._get_default_model())
     end)
+
+    it("can fetch models", function()
+      local done = false
+      Providers.GeminiCLIProvider.fetch_models(function(models, err)
+        assert.is_nil(err)
+        eq({ "auto", "pro", "flash", "flash-lite" }, models)
+        done = true
+      end)
+      assert.is_true(done)
+    end)
   end)
 
   describe("provider integration", function()
