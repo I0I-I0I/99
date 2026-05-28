@@ -76,4 +76,30 @@ function M.on_provider_selected(name, lookup)
   )
 end
 
+--- @param provider _99.Providers.BaseProvider?
+function M.select_model(provider)
+  M.get_models(provider, function(models, current)
+    vim.ui.select(models, {
+      prompt = "99: Select Model (current: " .. current .. ")",
+      default = current,
+    }, function(choice)
+      if choice then
+        M.on_model_selected(choice)
+      end
+    end)
+  end)
+end
+
+function M.select_provider()
+  local info = M.get_providers()
+  vim.ui.select(info.names, {
+    prompt = "99: Select Provider (current: " .. info.current .. ")",
+    default = info.current,
+  }, function(choice)
+    if choice then
+      M.on_provider_selected(choice, info.lookup)
+    end
+  end)
+end
+
 return M
