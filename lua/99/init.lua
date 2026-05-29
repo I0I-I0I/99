@@ -59,6 +59,7 @@ end
 --- @field auto_add_skills? boolean
 --- @field completion? _99.Completion
 --- @field tmp_dir? string
+--- @field auto_open_output? boolean
 
 --- @type _99.State
 local _99_state
@@ -368,6 +369,33 @@ function _99.visual(opts)
   return context.xid
 end
 
+--- Open a floating window to view the real-time output of the active or most recent request.
+function _99.output()
+  local state = _99.__get_state()
+  if not state then
+    print("99: State not initialized. Please run setup first.")
+    return
+  end
+
+  local active = state.tracking:active()
+  local request
+  if #active > 0 then
+    request = active[#active]
+  else
+    local history = state.tracking.history
+    if #history > 0 then
+      request = history[#history]
+    end
+  end
+
+  if not request then
+    print("99: No active or recent requests found.")
+    return
+  end
+
+  Window.open_output_window(request, true)
+end
+
 function _99.view_logs()
   local requests = _99_state.tracking.history
   local str_requests = Tracking.to_selectable_list(requests)
@@ -459,6 +487,7 @@ function _99.setup(opts)
   _99_state.__tmp_dir = opts.tmp_dir
 
   _99_state.display_errors = opts.display_errors or false
+  _99_state.auto_open_output = opts.auto_open_output or false
   _99_state:refresh_rules()
   Extensions.init(_99_state)
   Extensions.capture_project_root()

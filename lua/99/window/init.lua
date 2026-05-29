@@ -10,6 +10,7 @@ local LEGEND = 200
 --- @field active_windows _99.window.Window[]
 local M = {
   active_windows = {},
+  output_win = nil,
 }
 
 local nsid = vim.api.nvim_create_namespace("99.window.error")
@@ -117,6 +118,19 @@ local function create_centered_window()
   local width, height = get_ui_dimensions()
   local win_width = math.floor(width * 2 / 3)
   local win_height = math.floor(height / 3)
+  return {
+    width = win_width,
+    height = win_height,
+    row = math.floor((height - win_height) / 2),
+    col = math.floor((width - win_width) / 2),
+    border = "rounded",
+  }
+end
+
+local function create_output_window_config()
+  local width, height = get_ui_dimensions()
+  local win_width = math.floor(width * 0.8)
+  local win_height = math.floor(height * 0.8)
   return {
     width = win_width,
     height = win_height,
@@ -588,6 +602,7 @@ function M.clear_active_popups()
     window_close(window)
   end
   M.active_windows = {}
+  M.output_win = nil
 end
 
 --- @return _99.window.Window
@@ -671,6 +686,9 @@ function M.close(win)
     return
   end
   window_close(win)
+  if M.output_win and M.output_win.win_id == win.win_id then
+    M.output_win = nil
+  end
   for i, active_win in ipairs(M.active_windows) do
     if active_win.win_id == win.win_id then
       table.remove(M.active_windows, i)
@@ -731,4 +749,125 @@ function M.create_split(content, buffer, opts)
     buffer = buf_id,
   }
 end
+
+local function append_streaming_text(buf_id, chunk)
+  local line_count = vim.api.nvim_buf_line_count(buf_id)
+  local last_line = vim.api.nvim_buf_get_lines(buf_id, line_count - 1, line_count, false)[1] or ""
+
+  local parts = vim.split(chunk, "\n", { plain = true })
+  if #parts == 0 then
+    return
+  end
+
+  -- If the buffer only contains the waiting message, clear it
+  if line_count == 1 and last_line == "Waiting for output from agent..." then
+    last_line = ""
+  end
+
+  vim.api.nvim_buf_set_lines(buf_id, line_count - 1, line_count, false, { last_line .. parts[1] })
+
+  if #parts > 1 then
+    local new_lines = {}
+    for i = 2, #parts do
+      table.insert(new_lines, parts[i])
+    end
+    vim.api.nvim_buf_set_lines(buf_id, line_count, line_count, false, new_lines)
+  end
+end
+
+function M.append_to_output(request_xid, chunk)
+  if not M.output_win or M.output_win.request_xid ~= request_xid then
+    return
+  end
+
+  local win_id = M.output_win.win_id
+  local buf_id = M.output_win.buf_id
+
+  if not win_valid(win_id) or not buf_valid(buf_id) then
+    M.output_win = nil
+    return
+  end
+
+  vim.bo[buf_id].modifiable = true
+  append_streaming_text(buf_id, chunk)
+  vim.bo[buf_id].modifiable = false
+
+  local line_count = vim.api.nvim_buf_line_count(buf_id)
+  pcall(vim.api.nvim_win_set_cursor, win_id, { line_count, 0 })
+end
+
+function M.complete_output(request_xid, status)
+  if not M.output_win or M.output_win.request_xid ~= request_xid then
+    return
+  end
+
+  local win_id = M.output_win.win_id
+  if not win_valid(win_id) then
+    M.output_win = nil
+    return
+  end
+
+  local title = string.format(" 99 - Output (%s) ", status:upper())
+  M.output_win.config.title = title
+  vim.api.nvim_win_set_config(win_id, { title = title })
+end
+
+--- @param request _99.Prompt
+--- @param enter boolean | nil
+function M.open_output_window(request, enter)
+  if enter == nil then
+    enter = true
+  end
+
+  if M.output_win and win_valid(M.output_win.win_id) then
+    local old_win = M.output_win
+    M.close(old_win)
+    if old_win.request_xid == request.xid then
+      return
+    end
+  end
+
+  local config = create_output_window_config()
+  local title = string.format(" 99 - Output (%s) ", request.state:upper())
+  config.title = title
+
+  local window = create_floating_window(config, title, enter)
+  window.type = "output"
+  window.request_xid = request.xid
+
+  vim.api.nvim_buf_set_name(window.buf_id, "99-output")
+  vim.bo[window.buf_id].filetype = "markdown"
+  vim.bo[window.buf_id].buftype = "nofile"
+  vim.bo[window.buf_id].bufhidden = "wipe"
+  vim.bo[window.buf_id].swapfile = false
+
+  local full_text = table.concat(request.output_stream or request.stdout_data or {}, "")
+  local lines = {}
+  if full_text ~= "" then
+    lines = vim.split(full_text, "\n", { plain = true })
+  else
+    lines = { "Waiting for output from agent..." }
+  end
+
+  vim.bo[window.buf_id].modifiable = true
+  vim.api.nvim_buf_set_lines(window.buf_id, 0, -1, false, lines)
+  vim.bo[window.buf_id].modifiable = false
+
+  local close_fn = function()
+    M.close(window)
+  end
+
+  vim.keymap.set("n", "q", close_fn, { buffer = window.buf_id, nowait = true })
+  vim.keymap.set("n", "<Esc>", close_fn, { buffer = window.buf_id, nowait = true })
+
+  if request.state == "requesting" then
+    local line_count = vim.api.nvim_buf_line_count(window.buf_id)
+    pcall(vim.api.nvim_win_set_cursor, window.win_id, { line_count, 0 })
+  else
+    pcall(vim.api.nvim_win_set_cursor, window.win_id, { 1, 0 })
+  end
+
+  M.output_win = window
+end
+
 return M

@@ -241,22 +241,51 @@ function Prompt:_observer(obs)
       self.state = "requesting"
       self._99.tracking:track(self)
 
+      if self._99.auto_open_output then
+        vim.schedule(function()
+          local win_mod = require("99.window")
+          win_mod.open_output_window(self, false)
+        end)
+      end
+
       if obs then
         obs.on_start()
       end
     end,
     on_complete = function(status, res)
       self.state = status
+      local win_mod = require("99.window")
+      win_mod.complete_output(self.xid, status)
       if obs then
         obs.on_complete(status, res)
       end
     end,
     on_stderr = function(line)
+      if not self.stderr_data then
+        self.stderr_data = {}
+      end
+      if not self.output_stream then
+        self.output_stream = {}
+      end
+      table.insert(self.stderr_data, line)
+      table.insert(self.output_stream, line)
+      local win_mod = require("99.window")
+      win_mod.append_to_output(self.xid, line)
       if obs then
         obs.on_stderr(line)
       end
     end,
     on_stdout = function(line)
+      if not self.stdout_data then
+        self.stdout_data = {}
+      end
+      if not self.output_stream then
+        self.output_stream = {}
+      end
+      table.insert(self.stdout_data, line)
+      table.insert(self.output_stream, line)
+      local win_mod = require("99.window")
+      win_mod.append_to_output(self.xid, line)
       if obs then
         obs.on_stdout(line)
       end

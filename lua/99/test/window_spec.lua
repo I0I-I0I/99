@@ -71,4 +71,30 @@ describe("Window", function()
       { 0, 15, 21, "Comment" },
     }, highlights)
   end)
+
+  it("opens output window and updates streaming text in real time", function()
+    local request = {
+      xid = 42,
+      state = "requesting",
+      stdout_data = { "Hello ", "world!" },
+    }
+
+    Window.open_output_window(request, false)
+    eq(1, #Window.active_windows)
+    local win = Window.output_win
+    eq("output", win.type)
+    eq(42, win.request_xid)
+
+    local lines = vim.api.nvim_buf_get_lines(win.buf_id, 0, -1, false)
+    eq({ "Hello world!" }, lines)
+
+    -- Append more text in real time
+    Window.append_to_output(42, "\nStreaming new\nlines!")
+    lines = vim.api.nvim_buf_get_lines(win.buf_id, 0, -1, false)
+    eq({ "Hello world!", "Streaming new", "lines!" }, lines)
+
+    -- Complete the output
+    Window.complete_output(42, "success")
+    eq(" 99 - Output (SUCCESS) ", win.config.title)
+  end)
 end)
