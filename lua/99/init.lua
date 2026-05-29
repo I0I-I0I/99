@@ -54,12 +54,12 @@ end
 --- @field in_flight_options? _99.StatusWindow.Opts
 --- @field md_files? string[]
 --- @field provider? _99.Providers.BaseProvider
---- @field provider_extra_args? string[]
+--- @field provider_extra_args? string[] Additional arguments for the provider's CLI.
 --- @field display_errors? boolean
 --- @field auto_add_skills? boolean
 --- @field completion? _99.Completion
 --- @field tmp_dir? string
---- @field auto_open_output? boolean
+--- @field auto_open_output? boolean Automatically open the output window when a request starts.
 
 --- @type _99.State
 local _99_state
@@ -195,6 +195,8 @@ local _99_state
 --- @field vibe fun(opts?: _99.ops.Opts): _99.TraceID | nil
 --- will ask opencode or whatever provider currently being used to perform a vibe
 --- session.
+--- @field tutorial fun(opts: _99.ops.Opts): nil
+--- starts a tutorial session based on the provided prompt and opens a tutorial window.
 --- @field open fun(): nil
 --- Opens a selection window for you to select the last interaction to open
 --- and display its contents in a way that makes sense for its type.  For
@@ -203,14 +205,30 @@ local _99_state
 --- @field visual fun(opts: _99.ops.Opts): _99.TraceID
 --- takes your current selection and sends that along with the prompt provided and replaces
 --- your visual selection with the results
+--- @field output fun(): nil
+--- opens a floating window to view the real-time output of the active or most recent request.
 --- @field view_logs fun(): nil
 --- view_logs allows you to select the request you want to see and then you
 --- get to see the logs.
+--- @field info fun(): nil
+--- displays configuration and status information, including current rules and previous requests.
 --- @field stop_all_requests fun(): nil
 --- stops all in flight requests.  this means that the underlying process will
---- be killed (OpenCode) and any result will be discared
+--- be killed and any result will be discarded
 --- @field clear_previous_requests fun(): nil
 --- clears all previous search and visual operations
+--- @field add_md_file fun(md: string): _99
+--- programmatically add markdown files (like `AGENT.md`) to be used as context.
+--- @field rm_md_file fun(md: string): _99
+--- programmatically remove markdown files.
+--- @field set_model fun(model: string): _99
+--- manage the active AI model for the current session.
+--- @field get_model fun(): string
+--- get the active AI model.
+--- @field set_provider fun(provider: _99.Providers.BaseProvider): _99
+--- manage the active AI provider for the current session.
+--- @field get_provider fun(): _99.Providers.BaseProvider
+--- get the active AI provider.
 --- @field Extensions _99.Extensions
 --- check out Worker for cool abstraction on search and vibe
 local _99 = {

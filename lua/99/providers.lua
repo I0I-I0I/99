@@ -103,7 +103,7 @@ function BaseProvider:make_request(query, context, observer)
         if err and err ~= "" then
           logger:debug("stderr#error", "err", err)
         end
-        if not err then
+        if not err and data then
           observer.on_stderr(data)
         end
       end),
@@ -115,10 +115,26 @@ function BaseProvider:make_request(query, context, observer)
         return
       end
       if obj.code ~= 0 then
+        local err_msg = obj.stderr
+        if not err_msg or vim.trim(err_msg) == "" then
+          err_msg = obj.stdout
+        end
+        if not err_msg or vim.trim(err_msg) == "" then
+          err_msg = string.format("process exited with code %d", obj.code)
+        else
+          err_msg = vim.trim(err_msg)
+        end
+
         local str =
           string.format("process exit code: %d\n%s", obj.code, vim.inspect(obj))
         once_complete("failed", str)
-        logger:fatal(
+
+        vim.notify(
+          string.format("%s failed: %s", self:_get_provider_name(), err_msg),
+          vim.log.levels.ERROR
+        )
+
+        logger:error(
           self:_get_provider_name() .. " make_query failed",
           "obj from results",
           obj
@@ -338,6 +354,40 @@ function GeminiCLIProvider.fetch_models(callback)
   }, nil)
 end
 
+--- @class GmnProvider : _99.Providers.BaseProvider
+local GmnProvider = setmetatable({}, { __index = BaseProvider })
+
+--- @param query string
+--- @param context _99.Prompt
+--- @return string[]
+function GmnProvider._build_command(_, query, context)
+  return {
+    "gmn",
+    "--model",
+    context.model,
+    "--prompt",
+    query,
+  }
+end
+
+--- @return string
+function GmnProvider._get_provider_name()
+  return "GmnProvider"
+end
+
+--- @return string
+function GmnProvider._get_default_model()
+  return "auto"
+end
+
+function GmnProvider.fetch_models(callback)
+  callback({
+    "auto",
+    "pro",
+    "flash",
+    "flash-lite",
+  }, nil)
+end
 
 return {
   BaseProvider = BaseProvider,
@@ -346,4 +396,5 @@ return {
   CursorAgentProvider = CursorAgentProvider,
   KiroProvider = KiroProvider,
   GeminiCLIProvider = GeminiCLIProvider,
+  GmnProvider = GmnProvider,
 }

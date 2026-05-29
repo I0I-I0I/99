@@ -752,7 +752,12 @@ end
 
 local function append_streaming_text(buf_id, chunk)
   local line_count = vim.api.nvim_buf_line_count(buf_id)
-  local last_line = vim.api.nvim_buf_get_lines(buf_id, line_count - 1, line_count, false)[1] or ""
+  local last_line = vim.api.nvim_buf_get_lines(
+    buf_id,
+    line_count - 1,
+    line_count,
+    false
+  )[1] or ""
 
   local parts = vim.split(chunk, "\n", { plain = true })
   if #parts == 0 then
@@ -764,7 +769,13 @@ local function append_streaming_text(buf_id, chunk)
     last_line = ""
   end
 
-  vim.api.nvim_buf_set_lines(buf_id, line_count - 1, line_count, false, { last_line .. parts[1] })
+  vim.api.nvim_buf_set_lines(
+    buf_id,
+    line_count - 1,
+    line_count,
+    false,
+    { last_line .. parts[1] }
+  )
 
   if #parts > 1 then
     local new_lines = {}
@@ -841,7 +852,8 @@ function M.open_output_window(request, enter)
   vim.bo[window.buf_id].bufhidden = "wipe"
   vim.bo[window.buf_id].swapfile = false
 
-  local full_text = table.concat(request.output_stream or request.stdout_data or {}, "")
+  local full_text =
+    table.concat(request.output_stream or request.stdout_data or {}, "")
   local lines = {}
   if full_text ~= "" then
     lines = vim.split(full_text, "\n", { plain = true })
@@ -858,7 +870,12 @@ function M.open_output_window(request, enter)
   end
 
   vim.keymap.set("n", "q", close_fn, { buffer = window.buf_id, nowait = true })
-  vim.keymap.set("n", "<Esc>", close_fn, { buffer = window.buf_id, nowait = true })
+  vim.keymap.set(
+    "n",
+    "<Esc>",
+    close_fn,
+    { buffer = window.buf_id, nowait = true }
+  )
 
   if request.state == "requesting" then
     local line_count = vim.api.nvim_buf_line_count(window.buf_id)

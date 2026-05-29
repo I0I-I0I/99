@@ -97,6 +97,35 @@ describe("providers", function()
     end)
   end)
 
+  describe("GmnProvider", function()
+    it("builds correct command with model", function()
+      local request = { model = "flash" }
+      local cmd =
+        Providers.GmnProvider._build_command(nil, "test query", request)
+      eq({
+        "gmn",
+        "--model",
+        "flash",
+        "--prompt",
+        "test query",
+      }, cmd)
+    end)
+
+    it("has correct default model", function()
+      eq("auto", Providers.GmnProvider._get_default_model())
+    end)
+
+    it("can fetch models", function()
+      local done = false
+      Providers.GmnProvider.fetch_models(function(models, err)
+        assert.is_nil(err)
+        eq({ "auto", "pro", "flash", "flash-lite" }, models)
+        done = true
+      end)
+      assert.is_true(done)
+    end)
+  end)
+
   describe("provider integration", function()
     it("can be set as provider override", function()
       local _99 = require("99")
@@ -150,6 +179,17 @@ describe("providers", function()
       end
     )
 
+    it(
+      "uses GmnProvider default model when provider specified but no model",
+      function()
+        local _99 = require("99")
+
+        _99.setup({ provider = Providers.GmnProvider })
+        local state = _99.__get_state()
+        eq("auto", state.model)
+      end
+    )
+
     it("uses custom model when both provider and model specified", function()
       local _99 = require("99")
 
@@ -186,6 +226,7 @@ describe("providers", function()
       eq("function", type(Providers.ClaudeCodeProvider.make_request))
       eq("function", type(Providers.CursorAgentProvider.make_request))
       eq("function", type(Providers.GeminiCLIProvider.make_request))
+      eq("function", type(Providers.GmnProvider.make_request))
     end)
   end)
 end)

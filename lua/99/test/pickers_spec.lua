@@ -44,7 +44,10 @@ describe("pickers", function()
 
     assert.is_not_nil(last_ui_select_args)
     assert.is_true(#last_ui_select_args.items > 0)
-    eq("99: Select Provider (current: OpenCodeProvider)", last_ui_select_args.opts.prompt)
+    eq(
+      "99: Select Provider (current: OpenCodeProvider)",
+      last_ui_select_args.opts.prompt
+    )
 
     -- Trigger choice callback to select GeminiCLIProvider
     last_ui_select_args.on_choice("GeminiCLIProvider")
