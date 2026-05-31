@@ -205,6 +205,8 @@ local _99_state
 --- @field visual fun(opts: _99.ops.Opts): _99.TraceID
 --- takes your current selection and sends that along with the prompt provided and replaces
 --- your visual selection with the results
+--- @field implement fun(opts?: _99.ops.Opts): _99.TraceID
+--- implements the function under cursor (if in normal mode) or selected function without prompting the user.
 --- @field output fun(): nil
 --- opens a floating window to view the real-time output of the active or most recent request.
 --- @field view_logs fun(): nil
@@ -384,6 +386,106 @@ function _99.visual(opts)
   else
     capture_prompt(ops.over_range, "Visual", context, opts)
   end
+  return context.xid
+end
+
+local function get_enclosing_function_range()
+  local geo = require("99.geo")
+  local Range = geo.Range
+
+  local get_node = vim.treesitter.get_node
+  if not get_node then
+    return nil
+  end
+
+  local ok, node = pcall(get_node)
+  if not ok or not node then
+    return nil
+  end
+
+  local current_buf = vim.api.nvim_get_current_buf()
+
+  while node do
+    local type = node:type():lower()
+    if type:find("function") or type:find("method") or type:find("func") then
+      -- If it's a leaf node (like the 'func'/'function' keyword itself), we want its parent function definition instead.
+      if node:child_count() > 0 then
+        return Range:from_ts_node(node, current_buf)
+      end
+    end
+    node = node:parent()
+  end
+  return nil
+end
+
+local function detect_new_file(text, current_file_path)
+  if not text or text == "" then
+    return nil
+  end
+
+  local current_ext = vim.fn.fnamemodify(current_file_path, ":e")
+  local current_dir
+  if not current_file_path or current_file_path == "" then
+    current_dir = vim.fn.getcwd()
+  else
+    current_dir = vim.fn.fnamemodify(current_file_path, ":h")
+  end
+
+  local lines = vim.split(text, "\n")
+  for _, line in ipairs(lines) do
+    -- 1. Lua pattern
+    local lua_module = line:match("require%s*%(?%s*[\"']([^\"']+)[\"']")
+    if lua_module then
+      local rel_path = lua_module:gsub("%.", "/") .. ".lua"
+      return vim.fn.simplify(current_dir .. "/" .. rel_path)
+    end
+
+    -- 2. Python pattern
+    local py_module = line:match("from%s+([%w_%.]+)%s+import")
+      or line:match("import%s+([%w_%.]+)")
+    if py_module then
+      local rel_path = py_module:gsub("%.", "/") .. ".py"
+      return vim.fn.simplify(current_dir .. "/" .. rel_path)
+    end
+
+    -- 3. JS/TS patterns
+    local js_module = line:match("from%s+[\"'](%.[^\"']+)[\"']")
+      or line:match("require%s*%(?%s*[\"'](%.[^\"']+)[\"']")
+    if js_module then
+      local ext = (
+        current_ext == "ts"
+        or current_ext == "tsx"
+        or current_ext == "js"
+        or current_ext == "jsx"
+      )
+          and current_ext
+        or "js"
+      return vim.fn.simplify(current_dir .. "/" .. js_module .. "." .. ext)
+    end
+  end
+
+  return nil
+end
+
+--- @param opts _99.ops.Opts?
+--- @return _99.TraceID
+function _99.implement(opts)
+  opts = process_opts(opts)
+  opts.additional_prompt = opts.additional_prompt or "Implement this function."
+  local context = Prompt.visual(_99_state)
+
+  local current_file_path = vim.api.nvim_buf_get_name(context.data.buffer)
+  local text = context.data.range:to_text()
+
+  local new_file_path = detect_new_file(text, current_file_path)
+  if new_file_path then
+    opts.new_file_path = new_file_path
+    local new_file_name = vim.fn.fnamemodify(new_file_path, ":t")
+    opts.additional_prompt = "Implement the new module/file: " .. new_file_name
+  end
+
+  context.user_prompt = opts.additional_prompt
+  ops.over_range(context, opts)
   return context.xid
 end
 

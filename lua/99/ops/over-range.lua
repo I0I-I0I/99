@@ -44,7 +44,42 @@ local function over_range(context, opts)
     bottom_status:stop()
   end)
 
-  local system_cmd = context._99.prompts.prompts.visual_selection(range)
+  local system_cmd
+  if opts.new_file_path then
+    local new_file_name = vim.fn.fnamemodify(opts.new_file_path, ":t")
+    local function get_surrounding_context(r, n)
+      local start_row, _ = r.start:to_vim()
+      local end_row, _ = r.end_:to_vim()
+      local line_count = vim.api.nvim_buf_line_count(r.buffer)
+      local from = math.max(start_row - n, 0)
+      local to = math.min(end_row + 1 + n, line_count)
+      local lines = vim.api.nvim_buf_get_lines(r.buffer, from, to, false)
+      return table.concat(lines, "\n")
+    end
+    system_cmd = string.format(
+      [[
+You receive a selection in neovim that references a module/file you need to create: %s
+Please provide the complete, robust, canonical implementation for this new file.
+We will save your response directly into the file.
+Do not output any markdown formatting other than the code itself, do not wrap in code blocks unless they are standard code, and output ONLY the implementation code for this new file.
+<SELECTION_LOCATION>
+%s
+</SELECTION_LOCATION>
+<SELECTION_CONTENT>
+%s
+</SELECTION_CONTENT>
+<SURROUNDING_CONTEXT>
+%s
+</SURROUNDING_CONTEXT>
+]],
+      new_file_name,
+      range:to_string(),
+      range:to_text(),
+      get_surrounding_context(range, 100)
+    )
+  else
+    system_cmd = context._99.prompts.prompts.visual_selection(range)
+  end
   local prompt, refs = make_prompt(context, system_cmd, opts)
 
   context:add_prompt_content(prompt)
@@ -79,16 +114,36 @@ local function over_range(context, opts)
           return
         end
 
-        local new_range = Range.from_marks(top_mark, bottom_mark)
-        local lines = vim.split(response, "\n")
+        if opts.new_file_path then
+          local dir = vim.fn.fnamemodify(opts.new_file_path, ":h")
+          if vim.fn.isdirectory(dir) == 0 then
+            vim.fn.mkdir(dir, "p")
+          end
+          local lines = vim.split(response, "\n")
+          local bufnr = vim.fn.bufadd(opts.new_file_path)
+          vim.fn.bufload(bufnr)
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+          vim.api.nvim_buf_call(bufnr, function()
+            vim.cmd("write")
+          end)
+          vim.api.nvim_set_current_buf(bufnr)
+          vim.notify(
+            "Created and implemented new file: " .. opts.new_file_path,
+            vim.log.levels.INFO
+          )
+          context._99:sync()
+        else
+          local new_range = Range.from_marks(top_mark, bottom_mark)
+          local lines = vim.split(response, "\n")
 
-        --- HACK: i am adding a new line here because above range will add a mark to the line above.
-        --- that way this appears to be added to "the same line" as the visual selection was
-        --- originally take from
-        table.insert(lines, 1, "")
+          --- HACK: i am adding a new line here because above range will add a mark to the line above.
+          --- that way this appears to be added to "the same line" as the visual selection was
+          --- originally take from
+          table.insert(lines, 1, "")
 
-        new_range:replace_text(lines)
-        context._99:sync()
+          new_range:replace_text(lines)
+          context._99:sync()
+        end
       end
     end,
     on_stdout = function(line)

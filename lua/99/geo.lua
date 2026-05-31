@@ -234,12 +234,27 @@ function Range:new(buffer, start, end_)
   }, self)
 end
 
-function Range.from_visual_selection()
+function Range.from_visual_selection(is_visual)
   local buffer = vim.api.nvim_get_current_buf()
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
   local start = Point:from_1_based(start_pos[2], start_pos[3])
   local end_ = Point:from_1_based(end_pos[2], end_pos[3])
+
+  if
+    is_visual == false
+    or start_pos[2] == 0
+    or end_pos[2] == 0
+    or start:gt(end_)
+  then
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local row = cursor[1]
+    local start_p = Point:from_1_based(row, 1)
+    local line = vim.api.nvim_buf_get_lines(buffer, row - 1, row, false)[1]
+      or ""
+    local end_p = Point:from_1_based(row, #line + 1)
+    return Range:new(buffer, start_p, end_p)
+  end
 
   --- visual line mode will select the end point for each row to be int max
   --- which will cause marks to fail. so we have to correct it to the literal

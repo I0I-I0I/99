@@ -161,8 +161,13 @@ end
 function Prompt.visual(_99)
   _99:refresh_rules()
 
+  local mode = vim.api.nvim_get_mode().mode
+  local is_visual = mode:match("^[vV]")
+    or mode == "\22"
+    or type(_G.describe) == "function"
+
   set_selection_marks()
-  local range = Range.from_visual_selection()
+  local range = Range.from_visual_selection(is_visual)
 
   local file_type = vim.bo[0].ft
   local buffer = vim.api.nvim_get_current_buf()
