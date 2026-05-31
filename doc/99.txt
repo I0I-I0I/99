@@ -193,6 +193,9 @@ visual: fun(opts: _99.ops.Opts): _99.TraceID                   *99._99.visual*
     takes your current selection and sends that along with the prompt provided and replaces
     your visual selection with the results
 
+implement: fun(opts?: _99.ops.Opts): _99.TraceID            *99._99.implement*
+    implements the function under cursor (if in normal mode) or selected function without prompting the user.
+
 output: fun(): nil                                             *99._99.output*
     opens a floating window to view the real-time output of the active or most recent request.
 
