@@ -34,6 +34,8 @@ async function main(): Promise<void> {
   const repoRoot = path.resolve(docsRoot, "..");
   const luaRoot = path.join(repoRoot, "lua", "99");
   const readmePath = path.join(docsRoot, "README.md");
+  const readmeHeaderPath = path.join(repoRoot, "README_HEADER.md");
+  const vimdocPath = path.join(repoRoot, "doc", "99.txt");
 
   const luaFiles = await collectLuaFiles(luaRoot);
   const parsedClasses = await parseClassesFromFiles(luaFiles, repoRoot);
@@ -52,27 +54,248 @@ async function main(): Promise<void> {
     return Boolean(cls && (cls.tags.has("base") || cls.tags.has("include")));
   });
 
+  const readmeHeader = await readFileIfExists(readmeHeaderPath) ?? "";
+  const [headerMd, footerMd] = readmeHeader.split("___DOCS___");
+
   const markdown = renderMarkdown(documentedNames, classesByName);
+  const vimdoc = renderVimdoc(documentedNames, classesByName, headerMd, footerMd);
+
+  if (checkMode) {
+    let failed = false;
+    const existingReadme = await readFileIfExists(readmePath);
+    if (existingReadme !== markdown) {
+      console.error("[docs] README.md is out of date. Run: ./gen-docs");
+      failed = true;
+    }
+
+    const existingVimdoc = await readFileIfExists(vimdocPath);
+    if (existingVimdoc !== vimdoc) {
+      console.error("[docs] doc/99.txt is out of date. Run: ./gen-docs");
+      failed = true;
+    }
+
+    if (failed) {
+      process.exitCode = 1;
+      return;
+    }
+
+    console.error("[docs] Documentation is up to date");
+    if (stdoutMode) {
+      process.stdout.write(markdown);
+    }
+    return;
+  }
+
+  await fs.mkdir(path.dirname(vimdocPath), { recursive: true });
+  await fs.writeFile(vimdocPath, vimdoc, "utf8");
+  console.error(`[docs] wrote ${path.relative(repoRoot, vimdocPath)}`);
 
   if (stdoutMode) {
     process.stdout.write(markdown);
     return;
   }
 
-  if (checkMode) {
-    const existing = await readFileIfExists(readmePath);
-    if (existing !== markdown) {
-      console.error("[docs] README.md is out of date. Run: ./gen-docs");
-      process.exitCode = 1;
-      return;
-    }
+  await fs.writeFile(readmePath, markdown, "utf8");
+  console.error(`[docs] wrote ${path.relative(repoRoot, readmePath)}`);
+}
 
-    console.log("[docs] README.md is up to date");
-    return;
+function renderVimdoc(
+  documentedNames: string[],
+  classesByName: Map<string, ClassDoc>,
+  headerMd?: string,
+  footerMd?: string,
+): string {
+  const lines: string[] = [];
+  const width = 78;
+
+  lines.push(renderTaggedLine("99.txt", "*99.txt*", width));
+  lines.push("");
+  lines.push("==============================================================================");
+  lines.push(renderTaggedLine("99", "*99*", width));
+  lines.push("");
+  lines.push("The AI Neovim experience");
+
+  if (headerMd) {
+    lines.push("");
+    lines.push(...renderMarkdownToVimdoc(headerMd, width));
   }
 
-  await fs.writeFile(readmePath, markdown, "utf8");
-  console.log(`[docs] wrote ${path.relative(repoRoot, readmePath)}`);
+  if (documentedNames.length > 0) {
+    lines.push("");
+    lines.push("TABLE OF CONTENTS                                             *99-contents*");
+    lines.push("");
+    for (const name of documentedNames) {
+      const cls = classesByName.get(name);
+      if (cls) {
+        lines.push(renderTaggedLine(`  ${cls.name}`, `|99.${cls.name}|`, width));
+      }
+    }
+  }
+
+  if (documentedNames.length === 0) {
+    lines.push("");
+    lines.push("No documented types found.");
+  } else {
+    for (const name of documentedNames) {
+      const cls = classesByName.get(name);
+      if (!cls) {
+        continue;
+      }
+
+      lines.push("");
+      lines.push("==============================================================================");
+      lines.push(renderTaggedLine(cls.name.toUpperCase(), `*99.${cls.name}*`, width));
+
+      const classDescription = renderDescriptionVim(cls.descriptionLines);
+      if (classDescription.length > 0) {
+        lines.push("");
+        lines.push(...classDescription);
+      }
+
+      if (cls.fields.length > 0) {
+        lines.push("");
+        lines.push("PROPERTIES                                                   *99." + cls.name + ".properties*");
+
+        for (const field of cls.fields) {
+          lines.push("");
+          const fieldTag = `*99.${cls.name}.${field.name}*`;
+          const fieldHeader = `${field.name}: ${field.type}`;
+          lines.push(renderTaggedLine(fieldHeader, fieldTag, width));
+
+          const fieldDescription = renderDescriptionVim(field.descriptionLines);
+          if (fieldDescription.length > 0) {
+            lines.push(...fieldDescription.map((l) => "    " + l));
+          }
+
+          if (field.defaultValue) {
+            lines.push(`    Default: ${field.defaultValue}`);
+          }
+        }
+      }
+    }
+  }
+
+  if (footerMd) {
+    lines.push(...renderMarkdownToVimdoc(footerMd, width));
+  }
+
+  lines.push("");
+  lines.push("vim:tw=78:ts=8:ft=help:norl:");
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderMarkdownToVimdoc(markdown: string, width: number): string[] {
+  const result: string[] = [];
+  const lines = markdown.split(/\r?\n/);
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]!;
+
+    if (line.trim().startsWith("```")) {
+      if (inCodeBlock) {
+        result.push("<");
+        inCodeBlock = false;
+      } else {
+        const lang = line.trim().slice(3) || "lua";
+        result.push(">" + lang);
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      result.push("    " + line);
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith("# ")) {
+      // result.push(line.slice(2).toUpperCase());
+      continue; // Skip main title as it's already there
+    }
+
+    if (line.startsWith("## ")) {
+      const title = line.slice(3).trim();
+      const tag = `*99-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}*`;
+      result.push("");
+      result.push("==============================================================================");
+      result.push(renderTaggedLine(title.toUpperCase(), tag, width));
+      continue;
+    }
+
+    if (line.startsWith("### ")) {
+      const title = line.slice(4).trim();
+      const tag = `*99-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}*`;
+      result.push("");
+      result.push(renderTaggedLine(title, tag, width));
+      continue;
+    }
+
+    // Tables (very simple conversion)
+    if (line.includes("|") && lines[i + 1]?.includes("|---")) {
+      // Skip the separator line
+      const headerLine = line;
+      i += 1; // skip separator
+      result.push("");
+      result.push(headerLine);
+      continue;
+    }
+
+    // Bold, Italic, Code, Links
+    line = line.replace(/\*\*(.*?)\*\*/g, "$1");
+    line = line.replace(/\*(.*?)\*/g, "$1");
+    line = line.replace(/`(.*?)`/g, "$1");
+    line = line.replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)");
+
+    result.push(line);
+  }
+
+  return trimEdgeBlankLines(result);
+}
+
+function renderDescriptionVim(rawLines: string[]): string[] {
+  const lines = trimEdgeBlankLines(rawLines);
+  const result: string[] = [];
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (inCodeBlock) {
+        result.push("<");
+        inCodeBlock = false;
+      } else {
+        const lang = line.trim().slice(3) || "lua";
+        result.push(">" + lang);
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      result.push("    " + line);
+    } else {
+      // Handle simple formatting even in descriptions
+      let l = line.replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)");
+      l = l.replace(/`(.*?)`/g, "$1");
+      result.push(l);
+    }
+  }
+
+  if (inCodeBlock) {
+    result.push("<");
+  }
+
+  return result;
+}
+
+function renderTaggedLine(content: string, tag: string, width: number): string {
+  const spacesNeeded = width - content.length - tag.length;
+  if (spacesNeeded <= 0) {
+    return `${content} ${tag}`;
+  }
+  return content + " ".repeat(spacesNeeded) + tag;
 }
 
 function renderMarkdown(

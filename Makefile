@@ -19,4 +19,8 @@ lua_clean:
 	echo "===> Cleaning"
 	rm /tmp/lua_*
 
-pr_ready: lua_lint lua_test lua_fmt_check
+docs_check:
+	echo "===> Checking documentation"
+	./gen-docs --check
+
+pr_ready: lua_lint lua_test lua_fmt_check docs_check

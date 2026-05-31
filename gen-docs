@@ -9,11 +9,12 @@ TARGET_README_PATH="$SCRIPT_DIR/README.md"
 SCRIPT_DIR="$SCRIPT_DIR" \
 README_HEADER_PATH="$README_HEADER_PATH" \
 TARGET_README_PATH="$TARGET_README_PATH" \
-node --input-type=module <<'EOF'
+node --input-type=module - "$@" <<'EOF'
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+const checkMode = process.argv.includes("--check");
 const placeholder = "___DOCS___";
 const scriptDir = process.env.SCRIPT_DIR;
 const headerPath = process.env.README_HEADER_PATH;
@@ -24,11 +25,20 @@ if (!scriptDir || !headerPath || !targetPath) {
 }
 
 const generatorPath = path.join(scriptDir, "docs", "src", "generate.ts");
-const docs = execFileSync(
-  "node",
-  ["--experimental-strip-types", generatorPath, "--stdout"],
-  { encoding: "utf8" },
-).trimEnd();
+const args = ["--experimental-strip-types", generatorPath, "--stdout"];
+if (checkMode) {
+  args.push("--check");
+}
+
+let docs;
+try {
+  docs = execFileSync("node", args, { encoding: "utf8" }).trimEnd();
+} catch (e) {
+  if (checkMode) {
+    process.exit(1);
+  }
+  throw e;
+}
 
 const header = readFileSync(headerPath, "utf8");
 
@@ -39,6 +49,15 @@ if (!header.includes(placeholder)) {
 const combined = header.split(placeholder).join(docs);
 const output = combined.endsWith("\n") ? combined : `${combined}\n`;
 
-writeFileSync(targetPath, output, "utf8");
-console.log(`[docs] wrote ${targetPath}`);
+if (checkMode) {
+  const existing = readFileSync(targetPath, "utf8");
+  if (existing !== output) {
+    console.error("[docs] README.md is out of date. Run: ./gen-docs");
+    process.exit(1);
+  }
+  console.error("[docs] README.md is up to date");
+} else {
+  writeFileSync(targetPath, output, "utf8");
+  console.error(`[docs] wrote ${targetPath}`);
+}
 EOF
